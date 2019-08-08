@@ -363,6 +363,8 @@ func attemptUnseal(ss *ssv1alpha1.SealedSecret, keyRegistry *KeyRegistry) (*core
 	for _, privKey := range keyRegistry.privateKeys {
 		if secret, err := ss.Unseal(scheme.Codecs, privKey); err == nil {
 			return secret, nil
+		} else {
+			log.Printf("Error: %s", err)
 		}
 	}
 	return nil, fmt.Errorf("No key could decrypt secret")
