@@ -4,6 +4,8 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"fmt"
+	"log"
+	"strings"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -143,22 +145,33 @@ func (s *SealedSecret) Unseal(codecs runtimeserializer.CodecFactory, privKey *rs
 		secret.Type = s.Spec.Template.Type
 
 		secret.Data = map[string][]byte{}
+		successful := true
+		failedKeys := []string{}
 		for key, value := range s.Spec.EncryptedData {
 			plaintext, err := crypto.HybridDecrypt(rand.Reader, privKey, value, label)
 			if err != nil {
-				return nil, err
+				log.Printf("Failed to decrypt %s:%s key: %s --  %v", smeta.GetNamespace(), smeta.GetName(), key, err)
+				successful = false
+				failedKeys = append(failedKeys, key)
+				continue
 			}
 			secret.Data[key] = plaintext
+		}
+
+		if !successful {
+			return nil, fmt.Errorf("Failed to decrypt keys: %s", strings.Join(failedKeys, ","))
 		}
 
 	} else { // Support decrypting old secrets for backward compatibility
 		plaintext, err := crypto.HybridDecrypt(rand.Reader, privKey, s.Spec.Data, label)
 		if err != nil {
+			log.Printf("Failed to decrypt %s:%s --  %v", smeta.GetNamespace(), smeta.GetName(), err)
 			return nil, err
 		}
 
 		dec := codecs.UniversalDecoder(secret.GroupVersionKind().GroupVersion())
 		if err = runtime.DecodeInto(dec, plaintext, &secret); err != nil {
+			log.Printf("Failed to decrypt %s:%s --  %v", smeta.GetNamespace(), smeta.GetName(), err)
 			return nil, err
 		}
 	}
